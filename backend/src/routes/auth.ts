@@ -60,17 +60,29 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user by email in MongoDB
-    const userDoc = await UserModel.findOne({ email: email.toLowerCase() });
+    // // Find user by email in MongoDB
+    // const userDoc = await UserModel.findOne({ email: email.toLowerCase() });
 
-    if (!userDoc) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-      return;
+    // Try to find user in MongoDB first
+    let userDoc = null;
+    try {
+      userDoc = await UserModel.findOne({ email: email.toLowerCase() });
+    } catch (dbError) {
+      console.warn("MongoDB not available, falling back to demo data");
     }
 
+    let user: User;
+
+    // if (!userDoc) {
+    //   res.status(401).json({
+    //     success: false,
+    //     message: "Invalid email or password",
+    //   });
+    //   return;
+    // }
+
+    if (userDoc) {
+    // Use MongoDB user
     // Verify password
     if (!userDoc.password) {
       res.status(401).json({
@@ -91,7 +103,8 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Convert to User type for response
-    const user: User = {
+    // 
+    user = {
       id: userDoc._id.toString(),
       email: userDoc.email,
       password: userDoc.password,
@@ -99,6 +112,40 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       googleId: userDoc.googleId || null,
       createdAt: userDoc.createdAt.toISOString(),
     };
+
+    } else {
+      // Fallback to demo data
+      const demoUser = usersData.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+      if (!demoUser) {
+        res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
+        return;
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, demoUser.password);
+
+      if (!isValidPassword) {
+        res.status(401).json({
+          success: false,
+          message: "Invalid email or password",
+        });
+        return;
+      }
+
+      // Convert demo user to User type
+      user = {
+        id: demoUser.id,
+        email: demoUser.email,
+        password: demoUser.password,
+        name: demoUser.name,
+        googleId: demoUser.googleId,
+        createdAt: demoUser.createdAt,
+      };
+    }
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user.id, user.email);
